@@ -1,0 +1,8 @@
+{
+  "name": "Word Memo",
+  "short_name": "WordMemo",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f5f5f7",
+  "theme_color": "#111111"
+}

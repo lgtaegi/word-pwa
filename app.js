@@ -40,11 +40,22 @@ async function fileToTextUTF8(file) {
   return new TextDecoder("utf-8", { fatal: false }).decode(buf);
 }
 
+// ===== Parse optional leading number =====
+// Accepts: "1000. accept", "1000) accept", "1000 - accept" (number part only)
+// Returns { num: "1000", rest: "accept ..."} or { num:null, rest: original }
+function stripLeadingNumber(s) {
+  // examples matched:
+  // "1000. accept", "1000) accept", "1000: accept", "1000 - accept"
+  const m = s.match(/^\s*(\d{1,5})\s*(?:[.)：:]\s*|-\s+)\s*(.+)$/);
+  if (!m) return { num: null, rest: s.trim() };
+  return { num: m[1], rest: (m[2] || "").trim() };
+}
+
 // ===== TXT Parsing =====
 // supported formats (one per line):
-// 1) word<TAB>meaning
-// 2) word - meaning
-// 3) word-meaning  (split once)
+// 1) [optional number] word<TAB>meaning
+// 2) [optional number] word - meaning
+// 3) [optional number] word-meaning  (split once)
 function parseText(text) {
   const lines = text
     .split(/\r?\n/)
@@ -52,22 +63,25 @@ function parseText(text) {
     .filter(Boolean);
 
   const out = [];
-  for (const line of lines) {
+  for (const rawLine of lines) {
+    // 1) pull off optional leading number first
+    const { num, rest } = stripLeadingNumber(rawLine);
+
     let term = "";
     let meaning = "";
 
-    if (line.includes("\t")) {
-      const parts = line.split("\t");
+    if (rest.includes("\t")) {
+      const parts = rest.split("\t");
       term = (parts[0] || "").trim();
       meaning = (parts.slice(1).join("\t") || "").trim();
-    } else if (line.includes(" - ")) {
-      const parts = line.split(" - ");
+    } else if (rest.includes(" - ")) {
+      const parts = rest.split(" - ");
       term = (parts[0] || "").trim();
       meaning = (parts.slice(1).join(" - ") || "").trim();
-    } else if (line.includes("-")) {
-      const idx = line.indexOf("-");
-      term = line.slice(0, idx).trim();
-      meaning = line.slice(idx + 1).trim();
+    } else if (rest.includes("-")) {
+      const idx = rest.indexOf("-");
+      term = rest.slice(0, idx).trim();
+      meaning = rest.slice(idx + 1).trim();
     } else {
       continue;
     }
@@ -76,10 +90,11 @@ function parseText(text) {
 
     out.push({
       id: (crypto.randomUUID && crypto.randomUUID()) || String(Math.random()).slice(2),
+      num,        // ← 추가: 번호 (없으면 null)
       term,
       meaning,
       level: 0,
-      due: Date.now() // immediately due
+      due: Date.now()
     });
   }
   return out;
@@ -127,11 +142,13 @@ function getCardsByIds(ids) {
   return ids.map(id => cards.find(c => c.id === id)).filter(Boolean);
 }
 function buildTxt(cardsArr) {
-  // term<TAB>meaning
-  return cardsArr.map(c => `${c.term}\t${c.meaning}`).join("\n");
+  return cardsArr.map(c => {
+    // 번호가 있으면 "1000. word<TAB>meaning" 형태로 내보내기
+    const prefix = c.num ? `${c.num}. ` : "";
+    return `${prefix}${c.term}\t${c.meaning}`;
+  }).join("\n");
 }
 function downloadTextFile(filename, text) {
-  // UTF-8 with BOM (Windows Notepad friendly)
   const blob = new Blob(["\uFEFF" + text], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
 
@@ -189,18 +206,14 @@ async function shareUnknownAll() {
   const text = buildTxt(list);
   const blob = new Blob(["\uFEFF" + text], { type: "text/plain;charset=utf-8" });
 
-  // If Web Share API with files is supported, show share sheet (includes "Save to Files" on iOS)
   if (navigator.share && window.File) {
     try {
       const file = new File([blob], filename, { type: "text/plain" });
       await navigator.share({ files: [file], title: filename, text: "Unknown words" });
       return;
-    } catch (e) {
-      // user cancelled or not supported in this context; fall back
-    }
+    } catch (e) {}
   }
 
-  // Fallback: download
   downloadTextFile(filename, text);
 }
 
@@ -214,11 +227,9 @@ function clearUnknownAll() {
 
 // ===== UI =====
 function updateButtons() {
-  // Repeat buttons
   if ($("btnRepeatAll")) $("btnRepeatAll").disabled = sessionAllIds.length === 0;
   if ($("btnRepeatUnknown")) $("btnRepeatUnknown").disabled = sessionUnknownIds.length === 0;
 
-  // Export buttons
   if ($("btnExportUnknownSession")) $("btnExportUnknownSession").disabled = sessionUnknownIds.length === 0;
   if ($("btnExportUnknownAll")) $("btnExportUnknownAll").disabled = unknownIds.length === 0;
   if ($("btnShareUnknownAll")) $("btnShareUnknownAll").disabled = unknownIds.length === 0;
@@ -233,15 +244,29 @@ function updateUI() {
 
   updateButtons();
 
+  const badge = $("numBadge");
+
   if (!due.length) {
     $("prompt").textContent = cards.length ? "No cards due 🎉" : "Import a txt file to start.";
     $("answer").classList.add("hidden");
     $("btnShow").classList.add("hidden");
     $("gradeRow").classList.add("hidden");
+    if (badge) badge.classList.add("hidden");
     return;
   }
 
   const card = due[0];
+
+  // ✅ 번호 표시
+  if (badge) {
+    if (card.num) {
+      badge.textContent = `#${card.num}`;
+      badge.classList.remove("hidden");
+    } else {
+      badge.classList.add("hidden");
+    }
+  }
+
   $("prompt").textContent = card.term;
 
   if (showing) {
@@ -262,12 +287,9 @@ async function loadDefaultTxtIfEmpty() {
 
   try {
     const res = await fetch(DEFAULT_TXT, { cache: "no-store" });
-    if (!res.ok) {
-      console.warn("Default txt fetch failed:", res.status);
-      return;
-    }
+    if (!res.ok) return;
 
-    const text = await responseToTextUTF8(res); // force UTF-8
+    const text = await responseToTextUTF8(res);
     const parsed = parseText(text);
 
     if (parsed.length > 0) {
@@ -276,9 +298,6 @@ async function loadDefaultTxtIfEmpty() {
       showing = false;
       resetSession();
       updateUI();
-      console.log("Loaded default:", DEFAULT_TXT, parsed.length);
-    } else {
-      console.warn("Default txt parsed 0 lines. Check format.");
     }
   } catch (e) {
     console.warn("Default txt not loaded:", e);
@@ -290,10 +309,9 @@ $("btnImport").onclick = async () => {
   const file = $("file").files[0];
   if (!file) return alert("Please choose a .txt file first.");
 
-  const text = await fileToTextUTF8(file); // force UTF-8 for imports
+  const text = await fileToTextUTF8(file);
   const parsed = parseText(text);
 
-  // de-dup by term (case-insensitive)
   const existing = new Set(cards.map((c) => c.term.toLowerCase()));
   const filtered = parsed.filter((c) => !existing.has(c.term.toLowerCase()));
 
@@ -302,7 +320,7 @@ $("btnImport").onclick = async () => {
 
   $("file").value = "";
   showing = false;
-  resetSession(); // new import = new session
+  resetSession();
   updateUI();
 };
 
@@ -316,7 +334,6 @@ $("btnClear").onclick = () => {
   resetSession();
   updateUI();
 
-  // After clearing cards, reload default automatically
   loadDefaultTxtIfEmpty();
 };
 
@@ -330,19 +347,14 @@ function gradeCurrent(knew) {
   const c = due[0];
   if (!c) return;
 
-  // Track session
   pushUnique(sessionAllIds, c.id);
 
   if (!knew) {
-    // Track session unknown
     pushUnique(sessionUnknownIds, c.id);
-
-    // Track cumulative unknown
     pushUnique(unknownIds, c.id);
     saveUnknown();
   }
 
-  // Apply SRS
   if (knew) {
     c.level = Math.min((c.level || 0) + 1, 5);
     c.due = nextDue(c.level);
@@ -359,17 +371,14 @@ function gradeCurrent(knew) {
 $("btnKnew").onclick = () => gradeCurrent(true);
 $("btnForgot").onclick = () => gradeCurrent(false);
 
-// Repeat buttons
 if ($("btnRepeatAll")) $("btnRepeatAll").onclick = () => repeatAllSession();
 if ($("btnRepeatUnknown")) $("btnRepeatUnknown").onclick = () => repeatUnknownSession();
 
-// Export/Share buttons
 if ($("btnExportUnknownSession")) $("btnExportUnknownSession").onclick = () => exportUnknownSessionTxt();
 if ($("btnExportUnknownAll")) $("btnExportUnknownAll").onclick = () => exportUnknownAllTxt();
 if ($("btnShareUnknownAll")) $("btnShareUnknownAll").onclick = () => shareUnknownAll();
 if ($("btnClearUnknownAll")) $("btnClearUnknownAll").onclick = () => clearUnknownAll();
 
-// ===== Service Worker (offline cache) =====
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});
 }

@@ -5,19 +5,23 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#111111" />
   <title>Word Memo</title>
+
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header class="top">
     <h1>Word Memo</h1>
-    <p class="sub">Default TXT · Simple SRS · Repeat · Unknown export</p>
+    <p class="sub">Simple SRS · Repeat · Unknown Export</p>
   </header>
 
   <main class="wrap">
+    <!-- IMPORT -->
     <section class="card">
       <h2>Import words (.txt)</h2>
-      <p class="hint">Format: <code>word[TAB]meaning</code> or <code>word - meaning</code></p>
+      <p class="hint">
+        Format: <code>[optional number] word&lt;TAB&gt;meaning</code>
+      </p>
 
       <div class="row">
         <input id="file" type="file" accept=".txt,text/plain" />
@@ -26,16 +30,24 @@
       </div>
 
       <p id="stat" class="stat">Cards: 0</p>
-      <p class="hint small">Default loads: <code>word_3000.txt</code> (only when cards are empty)</p>
+      <p class="hint small">
+        Default file: <code>word_3000.txt</code>
+      </p>
     </section>
 
+    <!-- STUDY -->
     <section class="card">
       <div class="row space">
         <h2>Study</h2>
         <span id="due" class="pill">Due: 0</span>
       </div>
 
-      <div id="prompt" class="prompt">Import a txt file to start.</div>
+      <!-- WORD + NUMBER -->
+      <div class="promptWrap">
+        <div id="numBadge" class="numBadge hidden"></div>
+        <div id="prompt" class="prompt">Import a txt file to start.</div>
+      </div>
+
       <div id="answer" class="answer hidden"></div>
 
       <div class="controls">
@@ -47,25 +59,35 @@
         </div>
 
         <div class="repeatRow">
-          <button id="btnRepeatAll" class="ghost">Repeat from start (session)</button>
-          <button id="btnRepeatUnknown" class="ghost">Repeat unknown only (session)</button>
+          <button id="btnRepeatAll" class="ghost">Repeat all (session)</button>
+          <button id="btnRepeatUnknown" class="ghost">Repeat unknown (session)</button>
         </div>
 
         <div class="repeatRow">
-          <button id="btnExportUnknownSession" class="ghost">Download unknown (session) .txt</button>
-          <button id="btnExportUnknownAll" class="ghost">Download ALL unknown .txt</button>
-          <button id="btnShareUnknownAll" class="ghost">Share / Save ALL unknown</button>
-          <button id="btnClearUnknownAll" class="ghost">Clear unknown list</button>
+          <button id="btnExportUnknownSession" class="ghost">
+            Download unknown (session)
+          </button>
+          <button id="btnExportUnknownAll" class="ghost">
+            Download unknown (ALL)
+          </button>
+          <button id="btnShareUnknownAll" class="ghost">
+            Share / Save unknown
+          </button>
+          <button id="btnClearUnknownAll" class="ghost">
+            Clear unknown list
+          </button>
         </div>
       </div>
 
       <p class="hint small">
-        SRS: forgot → level 0 (10 min) · knew → +1 (1d/3d/7d/14d/30d)
+        forgot → 10 min · knew → 1d / 3d / 7d / 14d / 30d
       </p>
     </section>
 
     <footer class="foot">
-      <p class="small muted">iPhone: Safari → Share → Add to Home Screen</p>
+      <p class="small muted">
+        iPhone: Safari → Share → Add to Home Screen
+      </p>
     </footer>
   </main>
 

@@ -3,7 +3,8 @@ const DEFAULT_TXT = "words.txt";
 
 // ===== Storage =====
 const LS_CARDS = "wordmemo_cards_v2";
-const LS_UNKNOWN = "wordmemo_unknown_ids_v2"; // 누적 unknown
+const LS_UNKNOWN = "wordmemo_unknown_ids_v2";     // 누적 unknown
+const LS_WORDS_SIG = "wordmemo_words_sig_v1";     // words.txt 변경 감지용 (오픈 시 1회)
 
 let cards = JSON.parse(localStorage.getItem(LS_CARDS) || "[]");
 let unknownIds = JSON.parse(localStorage.getItem(LS_UNKNOWN) || "[]");
@@ -149,6 +150,7 @@ function buildTxt(cardsArr) {
 }
 
 function downloadTextFile(filename, text) {
+  // UTF-8 BOM 포함 → 윈도우 메모장 한글 깨짐 방지
   const blob = new Blob(["\uFEFF" + text], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
 
@@ -214,7 +216,7 @@ async function shareUnknownAll() {
       await navigator.share({ files: [file], title: filename, text: "Unknown words" });
       return;
     } catch (e) {
-      // cancelled / not allowed in this context -> fallback
+      // cancelled / not allowed -> fallback
     }
   }
 
@@ -227,6 +229,82 @@ function clearUnknownAll() {
   saveUnknown();
   updateUI();
   alert("Unknown list cleared.");
+}
+
+// ===== Update words.txt only when app opens / becomes visible =====
+async function sha256Hex(text) {
+  const enc = new TextEncoder().encode(text);
+  const buf = await crypto.subtle.digest("SHA-256", enc);
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function fetchWordsSignature() {
+  const bust = `?v=${Date.now()}`; // cache-bust for iPhone/PWA/SW
+  const res = await fetch(DEFAULT_TXT + bust, { cache: "no-store" });
+  if (!res.ok) throw new Error(`words fetch failed: ${res.status}`);
+
+  const text = await responseToTextUTF8(res);
+  const hash = await sha256Hex(text);
+  return { sig: `B:${hash}`, text };
+}
+
+// merge new file with existing progress (term-based)
+function mergePreserveProgress(freshCards) {
+  const oldMap = new Map(cards.map(c => [c.term.toLowerCase(), c]));
+
+  const merged = freshCards.map(nc => {
+    const key = nc.term.toLowerCase();
+    const old = oldMap.get(key);
+
+    if (old) {
+      return {
+        ...old,
+        num: nc.num ?? old.num ?? null,
+        term: nc.term,
+        meaning: nc.meaning
+      };
+    }
+    return nc;
+  });
+
+  cards = merged;
+  saveCards();
+
+  // keep only unknown IDs that still exist
+  const existingIds = new Set(cards.map(c => c.id));
+  unknownIds = unknownIds.filter(id => existingIds.has(id));
+  saveUnknown();
+
+  resetSession();
+  showing = false;
+  updateUI();
+}
+
+// check once on open/visible
+async function checkWordsUpdateOnOpen() {
+  try {
+    const prevSig = localStorage.getItem(LS_WORDS_SIG);
+    const { sig, text } = await fetchWordsSignature();
+
+    if (!prevSig) {
+      localStorage.setItem(LS_WORDS_SIG, sig);
+      return;
+    }
+
+    if (sig !== prevSig) {
+      const fresh = parseText(text);
+      if (fresh.length === 0) {
+        console.warn("words.txt changed but parsed 0 lines.");
+        return;
+      }
+
+      localStorage.setItem(LS_WORDS_SIG, sig);
+      mergePreserveProgress(fresh);
+      console.log("✅ words.txt updated → reloaded on open");
+    }
+  } catch (e) {
+    console.warn("checkWordsUpdateOnOpen error:", e);
+  }
 }
 
 // ===== UI =====
@@ -297,21 +375,39 @@ async function loadDefaultTxtIfEmpty() {
   if (cards.length > 0) return;
 
   try {
-    const res = await fetch(DEFAULT_TXT, { cache: "no-store" });
-    if (!res.ok) return;
+    const res = await fetch(DEFAULT_TXT + `?v=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) {
+      // Show a helpful message instead of failing silently
+      $("prompt").textContent = `Default file not found: ${DEFAULT_TXT} (HTTP ${res.status})`;
+      $("answer").classList.add("hidden");
+      $("btnShow").classList.add("hidden");
+      $("gradeRow").classList.add("hidden");
+      return;
+    }
 
     const text = await responseToTextUTF8(res);
     const parsed = parseText(text);
 
-    if (parsed.length > 0) {
-      cards = parsed;
-      saveCards();
-      showing = false;
-      resetSession();
-      updateUI();
+    if (parsed.length === 0) {
+      $("prompt").textContent =
+        `Loaded ${DEFAULT_TXT}, but 0 lines parsed. Check format: word<TAB>meaning or word - meaning`;
+      return;
     }
+
+    cards = parsed;
+    saveCards();
+
+    // Save initial signature so "open check" won't immediately reload
+    try {
+      const sigHash = await sha256Hex(text);
+      localStorage.setItem(LS_WORDS_SIG, `B:${sigHash}`);
+    } catch (e) {}
+
+    showing = false;
+    resetSession();
+    updateUI();
   } catch (e) {
-    console.warn("Default txt not loaded:", e);
+    $("prompt").textContent = `Failed to load ${DEFAULT_TXT}: ${String(e)}`;
   }
 }
 
@@ -323,12 +419,20 @@ $("btnImport").onclick = async () => {
   const text = await fileToTextUTF8(file);
   const parsed = parseText(text);
 
+  if (parsed.length === 0) {
+    alert("0 words parsed. Check format: word<TAB>meaning or word - meaning");
+    return;
+  }
+
   // de-dup by term (case-insensitive)
   const existing = new Set(cards.map((c) => c.term.toLowerCase()));
   const filtered = parsed.filter((c) => !existing.has(c.term.toLowerCase()));
 
   cards = cards.concat(filtered);
   saveCards();
+
+  // update signature baseline to the imported content? (optional)
+  // Here: do nothing because import is manual list add.
 
   $("file").value = "";
   showing = false;
@@ -407,3 +511,8 @@ if ("serviceWorker" in navigator) {
 updateUI();
 loadDefaultTxtIfEmpty();
 
+// ✅ check for words.txt update only when app opens / becomes visible
+checkWordsUpdateOnOpen();
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") checkWordsUpdateOnOpen();
+});

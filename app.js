@@ -15,10 +15,10 @@ let showing = false;
 // ===== Session tracking =====
 let sessionAllIds = [];
 
-// ✅ 핵심: "세션에서 현재까지 '아직 모르는' 단어" (업데이트 유지)
+// ✅ "세션에서 현재까지 아직 모르는 단어" (I forgot add / I knew remove)
 let sessionUnknownSet = new Set();
 
-// (세션 unknown을 파일로 내려받을 때 순서 유지용)
+// (세션 unknown export 시 순서 유지용)
 let sessionUnknownOrder = [];
 
 const $ = (id) => document.getElementById(id);
@@ -30,7 +30,6 @@ function pushUnique(arr, id) {
   if (!arr.includes(id)) arr.push(id);
 }
 
-// 세션 초기화(새 시작 느낌)
 function resetSession() {
   sessionAllIds = [];
   sessionUnknownSet = new Set();
@@ -117,11 +116,11 @@ function nextDue(level) {
 }
 
 // =====================================================
-// ✅ Unknown-only 반복: "모드 UI 없이" FILTER ON/OFF
+// ✅ Unknown-only 반복: UI 그대로, FILTER ON/OFF
 // =====================================================
 let unknownFilterOn = false;
 
-// unknown-only에서 "아직 남아있는 unknown 단어" (I knew로만 줄어듦)
+// unknown-only에서 "남아있는 unknown" (I knew로 줄어듦)
 let unknownFilterSet = new Set();
 
 // 시작 그룹(버튼 누르는 순간 스냅샷)
@@ -142,14 +141,11 @@ function clearUnknownFilter(silent = false) {
 }
 
 /**
- * ✅ 요구사항 1:
- * Repeat unknown (session)을 누를 때마다
- * "그 순간 최신 세션 unknown 상태"로 완전 리셋해서 다시 시작
- *
- * 여기서 최신 데이터 = sessionUnknownSet (I knew/I forgot 반영된 현재 상태)
+ * ✅ Repeat unknown (session)을 누를 때마다
+ * 그 순간 최신 "세션 unknown 상태(sessionUnknownSet)"로 완전 리셋 시작
  */
 function startUnknownFilterFromSession() {
-  const snapshot = Array.from(sessionUnknownSet); // ✅ 최신 상태 스냅샷
+  const snapshot = Array.from(sessionUnknownSet);
 
   if (snapshot.length === 0) {
     clearUnknownFilter(true);
@@ -158,12 +154,11 @@ function startUnknownFilterFromSession() {
     return;
   }
 
-  // ✅ 매번 완전 리셋
   unknownFilterOn = true;
   unknownFilterIds = snapshot;
   unknownFilterSet = new Set(snapshot);
 
-  // ✅ 다시 시작되도록 due를 now로 당김
+  // 다시 시작되도록 due를 now로 당김
   const now = Date.now();
   for (const id of unknownFilterIds) {
     const idx = cards.findIndex(c => c.id === id);
@@ -171,15 +166,13 @@ function startUnknownFilterFromSession() {
   }
   saveCards();
 
-  // ✅ UI 상태도 매번 리셋 (진짜 "다시 시작" 느낌)
+  // "다시 시작" 느낌으로 UI 상태 초기화
   showing = false;
   $("answer")?.classList.add("hidden");
   $("gradeRow")?.classList.add("hidden");
   $("btnShow")?.classList.remove("hidden");
 
-  // ✅ 요구사항 2: Study 위에 Unknown words 표시
   setStudyHintVisible(true);
-
   updateUI();
 }
 
@@ -243,7 +236,7 @@ function dateStamp() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// ✅ "unknown (session)"은 이제 "현재 세션에서 아직 unknown 상태"로 출력
+// ✅ 세션 unknown은 "현재 sessionUnknownSet" 기준으로 export
 function exportUnknownSessionTxt() {
   const ids = Array.from(sessionUnknownSet);
   if (ids.length === 0) {
@@ -373,7 +366,7 @@ async function checkWordsUpdateOnOpen() {
 function updateButtons() {
   if ($("btnRepeatAll")) $("btnRepeatAll").disabled = sessionAllIds.length === 0;
 
-  // ✅ 이제 repeat unknown은 "현재 세션 unknown 상태" 기준
+  // ✅ repeat unknown 기준도 세션 unknown 기준
   if ($("btnRepeatUnknown")) $("btnRepeatUnknown").disabled = sessionUnknownSet.size === 0;
 
   if ($("btnExportUnknownSession")) $("btnExportUnknownSession").disabled = sessionUnknownSet.size === 0;
@@ -387,21 +380,22 @@ function updateUI() {
 
   const queue = getQueue();
 
-  // ✅ unknown-only이면 Due는 "현재 큐 길이" (I knew / I forgot 둘 다 줄어듦)
+  // ✅ unknown-only이면 Due는 "현재 큐 길이"
   const dueShown = unknownFilterOn
     ? queue.length
     : cards.filter(c => (c.due || 0) <= Date.now()).length;
 
   $("due").textContent = `Due: ${dueShown}`;
 
-  // ✅ unknown-only이면 Unknown은 "남아있는 unknown 단어 수" (I knew로만 줄어듦)
-  $("unknownCount").textContent = unknownFilterOn
-    ? `Unknown: ${unknownFilterSet.size}`
+  // ✅ 핵심 수정:
+  // 세션이 시작된 뒤에는 Repeat all / Repeat unknown 상관없이 Unknown 카운트는 동일(세션 unknown)
+  const sessionActive = sessionAllIds.length > 0;
+
+  $("unknownCount").textContent = sessionActive
+    ? `Unknown: ${sessionUnknownSet.size}`
     : `Unknown: ${unknownIds.length}`;
 
-  // ✅ 요구사항 2 보장: unknown-only에서 Study 위 라벨
   setStudyHintVisible(unknownFilterOn);
-
   updateButtons();
 
   const badge = $("numBadge");
@@ -534,13 +528,13 @@ function gradeCurrent(knew) {
   pushUnique(sessionAllIds, c.id);
 
   if (!knew) {
-    // ✅ 세션 unknown 최신 상태 업데이트: add
+    // ✅ 세션 unknown 최신 상태: add
     if (!sessionUnknownSet.has(c.id)) {
       sessionUnknownSet.add(c.id);
       pushUnique(sessionUnknownOrder, c.id);
     }
 
-    // 누적 unknown(ALL)에도 저장
+    // ✅ 누적 unknown(ALL)에도 저장
     if (!unknownIds.includes(c.id)) {
       unknownIds.push(c.id);
       saveUnknown();
@@ -549,7 +543,7 @@ function gradeCurrent(knew) {
     c.level = 0;
     c.due = nextDue(0);
   } else {
-    // ✅ 세션 unknown 최신 상태 업데이트: remove
+    // ✅ 세션 unknown 최신 상태: remove
     if (sessionUnknownSet.has(c.id)) {
       sessionUnknownSet.delete(c.id);
     }

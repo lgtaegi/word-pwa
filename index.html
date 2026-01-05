@@ -1,3 +1,4 @@
+<!-- index.html (FINAL) -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -31,7 +32,6 @@
 
       <p id="stat" class="stat">Cards: 0</p>
 
-      <!-- ✅ CURRENT FILE (auto updates via app.js) -->
       <p class="hint small">
         Current file: <code id="currentFile">–</code>
       </p>
@@ -40,9 +40,15 @@
     <!-- STUDY -->
     <section class="card">
       <div class="row space">
-        <h2>Study</h2>
+        <div class="row" style="gap:10px; align-items:center;">
+          <h2 style="margin:0;">Study</h2>
 
-        <!-- ✅ right aligned: Due on top, Unknown under it -->
+          <!-- ✅ MODE BADGE + EXIT (hidden by default) -->
+          <span id="modeBadge" class="pill hidden">MODE: Unknown Session</span>
+          <button id="btnExitMode" class="ghost hidden" type="button">Exit</button>
+        </div>
+
+        <!-- right aligned: Due on top, Unknown under it -->
         <div class="pillCol">
           <span id="due" class="pill">Due: 0</span>
           <span id="unknownCount" class="pill">Unknown: 0</span>

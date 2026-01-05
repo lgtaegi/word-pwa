@@ -103,11 +103,15 @@ function nextDue(level) {
 }
 
 // =====================================================
-// ✅ Unknown-only 반복을 "UI 그대로" 유지하며 FILTER 방식
+// ✅ Unknown-only 반복: UI는 그대로, "FILTER"만 ON/OFF
 // =====================================================
 let unknownFilterOn = false;
-let unknownFilterSet = new Set();   // "아직 모르는(남은) unknown 단어" (I knew로만 줄어듦)
-let unknownFilterIds = [];          // 시작 시 그룹(순서)
+
+// "남아있는 unknown 단어" (I knew로만 줄어듦)
+let unknownFilterSet = new Set();
+
+// 시작 그룹(버튼 누르는 순간의 스냅샷)
+let unknownFilterIds = [];
 
 function setStudyHintVisible(on) {
   const el = $("studyHint");
@@ -115,7 +119,6 @@ function setStudyHintVisible(on) {
   el.classList.toggle("hidden", !on);
 }
 
-// unknown-only 필터 해제
 function clearUnknownFilter(silent = false) {
   unknownFilterOn = false;
   unknownFilterSet = new Set();
@@ -124,19 +127,28 @@ function clearUnknownFilter(silent = false) {
   if (!silent) updateUI();
 }
 
-// ✅ 핵심: 누를 때마다 "현재 sessionUnknownIds"로 다시 시작(리셋)
+/**
+ * ✅ 핵심 요구사항:
+ * Repeat unknown (session)을 누를 때마다
+ * "그 순간의 최신 sessionUnknownIds"로 스냅샷을 잡고
+ * 완전히 리셋해서 다시 시작한다.
+ */
 function startUnknownFilterFromSession() {
-  if (sessionUnknownIds.length === 0) return;
+  const snapshot = Array.from(new Set(sessionUnknownIds)); // 최신 + 중복제거
 
+  if (snapshot.length === 0) {
+    clearUnknownFilter(true);
+    updateUI();
+    alert("No unknown words in this session yet.");
+    return;
+  }
+
+  // ✅ 매번 완전 리셋
   unknownFilterOn = true;
+  unknownFilterIds = snapshot;
+  unknownFilterSet = new Set(snapshot);
 
-  // "현재 세션에서 forgot 눌렀던 것" 기준으로 새 그룹 구성
-  unknownFilterIds = [...sessionUnknownIds];
-
-  // "남은 unknown"은 처음엔 그룹 전체
-  unknownFilterSet = new Set(unknownFilterIds);
-
-  // 이 그룹을 지금 바로 돌릴 수 있게 due를 now로 당김
+  // ✅ 바로 다시 시작되도록 due를 now로 당김
   const now = Date.now();
   for (const id of unknownFilterIds) {
     const idx = cards.findIndex(c => c.id === id);
@@ -144,12 +156,16 @@ function startUnknownFilterFromSession() {
   }
   saveCards();
 
-  setStudyHintVisible(true);
+  // ✅ 매번 "처음 시작" 느낌으로 상태 초기화
   showing = false;
+  $("answer")?.classList.add("hidden");
+  $("gradeRow")?.classList.add("hidden");
+  $("btnShow")?.classList.remove("hidden");
+
+  setStudyHintVisible(true);
   updateUI();
 }
 
-// 현재 unknown-only에서 "지금 due(<=now)"인 카드들만 큐로
 function getUnknownQueue() {
   const now = Date.now();
   return cards.filter(c => unknownFilterSet.has(c.id) && (c.due || 0) <= now);
@@ -165,7 +181,6 @@ function getQueue() {
 function repeatAllSession() {
   if (sessionAllIds.length === 0) return;
 
-  // repeat all 하면 원래 UI/전체 큐로
   clearUnknownFilter(true);
 
   const now = Date.now();
@@ -294,7 +309,6 @@ function mergePreserveProgress(freshCards) {
   unknownIds = unknownIds.filter(id => existingIds.has(id));
   saveUnknown();
 
-  // unknown-only 중이면, 사라진 id 제거
   if (unknownFilterOn) {
     unknownFilterIds = unknownFilterIds.filter(id => existingIds.has(id));
     unknownFilterSet = new Set([...unknownFilterSet].filter(id => existingIds.has(id)));
@@ -352,7 +366,7 @@ function updateUI() {
 
   const queue = getQueue();
 
-  // ✅ 핵심: unknown-only일 때 Due는 "지금 due인 unknown 큐 길이"
+  // ✅ 핵심: unknown-only일 때 Due는 "현재 큐 길이" (I knew / I forgot 둘 다 줄어듦)
   const dueShown = unknownFilterOn
     ? queue.length
     : cards.filter(c => (c.due || 0) <= Date.now()).length;
@@ -514,12 +528,21 @@ function gradeCurrent(knew) {
     if (unknownFilterOn && unknownFilterSet.has(c.id)) {
       unknownFilterSet.delete(c.id);
       unknownFilterIds = unknownFilterIds.filter(id => id !== c.id);
+
+      // 남은 unknown이 0이면 필터 종료 (원하면 alert 추가 가능)
+      if (unknownFilterSet.size === 0) {
+        saveCards();
+        showing = false;
+        clearUnknownFilter(true);
+        updateUI();
+        return;
+      }
     }
   } else {
     c.level = 0;
     c.due = nextDue(0);
-    // unknown-only에서는 I forgot이어도 unknown은 유지 (unknownFilterSet 유지)
-    // due는 미래로 가므로, "queue.length" 기반 Due는 즉시 줄어듦(요구사항 충족)
+    // unknown-only에서 I forgot을 누르면 due가 미래로 가면서 queue에서 빠지므로
+    // Due(=queue.length)는 즉시 줄어듦 ✅
   }
 
   saveCards();
@@ -550,7 +573,6 @@ if ("serviceWorker" in navigator) {
   updateUI();
   loadCurrentFileLabel();
 
-  // cards가 있는데 current file이 비어 있으면 기본 파일로 보정
   if (cards.length > 0 && !getCurrentFile()) {
     setCurrentFile(DEFAULT_TXT);
   }

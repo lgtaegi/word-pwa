@@ -41,11 +41,8 @@ async function fileToTextUTF8(file) {
 }
 
 // ===== Parse optional leading number =====
-// Accepts: "1000. accept", "1000) accept", "1000 - accept" (number part only)
-// Returns { num: "1000", rest: "accept ..."} or { num:null, rest: original }
+// Accepts: "1000. accept", "1000) accept", "1000: accept", "1000 - accept"
 function stripLeadingNumber(s) {
-  // examples matched:
-  // "1000. accept", "1000) accept", "1000: accept", "1000 - accept"
   const m = s.match(/^\s*(\d{1,5})\s*(?:[.)：:]\s*|-\s+)\s*(.+)$/);
   if (!m) return { num: null, rest: s.trim() };
   return { num: m[1], rest: (m[2] || "").trim() };
@@ -64,7 +61,6 @@ function parseText(text) {
 
   const out = [];
   for (const rawLine of lines) {
-    // 1) pull off optional leading number first
     const { num, rest } = stripLeadingNumber(rawLine);
 
     let term = "";
@@ -90,7 +86,7 @@ function parseText(text) {
 
     out.push({
       id: (crypto.randomUUID && crypto.randomUUID()) || String(Math.random()).slice(2),
-      num,        // ← 추가: 번호 (없으면 null)
+      num, // optional
       term,
       meaning,
       level: 0,
@@ -124,6 +120,7 @@ function repeatAllSession() {
   showing = false;
   updateUI();
 }
+
 function repeatUnknownSession() {
   if (sessionUnknownIds.length === 0) return;
 
@@ -139,15 +136,18 @@ function repeatUnknownSession() {
 
 // ===== Unknown export helpers =====
 function getCardsByIds(ids) {
-  return ids.map(id => cards.find(c => c.id === id)).filter(Boolean);
+  return ids.map((id) => cards.find((c) => c.id === id)).filter(Boolean);
 }
+
 function buildTxt(cardsArr) {
-  return cardsArr.map(c => {
-    // 번호가 있으면 "1000. word<TAB>meaning" 형태로 내보내기
-    const prefix = c.num ? `${c.num}. ` : "";
-    return `${prefix}${c.term}\t${c.meaning}`;
-  }).join("\n");
+  return cardsArr
+    .map((c) => {
+      const prefix = c.num ? `${c.num}. ` : "";
+      return `${prefix}${c.term}\t${c.meaning}`;
+    })
+    .join("\n");
 }
+
 function downloadTextFile(filename, text) {
   const blob = new Blob(["\uFEFF" + text], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -161,6 +161,7 @@ function downloadTextFile(filename, text) {
 
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
 function dateStamp() {
   const d = new Date();
   const yyyy = d.getFullYear();
@@ -199,6 +200,7 @@ async function shareUnknownAll() {
     alert("Unknown list is empty.");
     return;
   }
+
   const list = getCardsByIds(unknownIds);
   if (!list.length) return alert("Unknown words not found (maybe cleared).");
 
@@ -211,7 +213,9 @@ async function shareUnknownAll() {
       const file = new File([blob], filename, { type: "text/plain" });
       await navigator.share({ files: [file], title: filename, text: "Unknown words" });
       return;
-    } catch (e) {}
+    } catch (e) {
+      // cancelled / not allowed in this context -> fallback
+    }
   }
 
   downloadTextFile(filename, text);
@@ -230,7 +234,9 @@ function updateButtons() {
   if ($("btnRepeatAll")) $("btnRepeatAll").disabled = sessionAllIds.length === 0;
   if ($("btnRepeatUnknown")) $("btnRepeatUnknown").disabled = sessionUnknownIds.length === 0;
 
-  if ($("btnExportUnknownSession")) $("btnExportUnknownSession").disabled = sessionUnknownIds.length === 0;
+  if ($("btnExportUnknownSession"))
+    $("btnExportUnknownSession").disabled = sessionUnknownIds.length === 0;
+
   if ($("btnExportUnknownAll")) $("btnExportUnknownAll").disabled = unknownIds.length === 0;
   if ($("btnShareUnknownAll")) $("btnShareUnknownAll").disabled = unknownIds.length === 0;
   if ($("btnClearUnknownAll")) $("btnClearUnknownAll").disabled = unknownIds.length === 0;
@@ -262,33 +268,7 @@ function updateUI() {
 
   const card = due[0];
 
-  // 번호 표시
-  if (badge) {
-    if (card.num) {
-      badge.textContent = `#${card.num}`;
-      badge.classList.remove("hidden");
-    } else {
-      badge.classList.add("hidden");
-    }
-  }
-
-  $("prompt").textContent = card.term;
-
-  if (showing) {
-    $("answer").textContent = card.meaning;
-    $("answer").classList.remove("hidden");
-    $("gradeRow").classList.remove("hidden");
-    $("btnShow").classList.add("hidden");
-  } else {
-    $("answer").classList.add("hidden");
-    $("gradeRow").classList.add("hidden");
-    $("btnShow").classList.remove("hidden");
-  }
-}
-
-  const card = due[0];
-
-  // ✅ 번호 표시
+  // number badge
   if (badge) {
     if (card.num) {
       badge.textContent = `#${card.num}`;
@@ -343,6 +323,7 @@ $("btnImport").onclick = async () => {
   const text = await fileToTextUTF8(file);
   const parsed = parseText(text);
 
+  // de-dup by term (case-insensitive)
   const existing = new Set(cards.map((c) => c.term.toLowerCase()));
   const filtered = parsed.filter((c) => !existing.has(c.term.toLowerCase()));
 
@@ -378,14 +359,19 @@ function gradeCurrent(knew) {
   const c = due[0];
   if (!c) return;
 
+  // Track session
   pushUnique(sessionAllIds, c.id);
 
   if (!knew) {
+    // Track session unknown
     pushUnique(sessionUnknownIds, c.id);
+
+    // Track cumulative unknown
     pushUnique(unknownIds, c.id);
     saveUnknown();
   }
 
+  // Apply SRS
   if (knew) {
     c.level = Math.min((c.level || 0) + 1, 5);
     c.due = nextDue(c.level);
@@ -402,14 +388,17 @@ function gradeCurrent(knew) {
 $("btnKnew").onclick = () => gradeCurrent(true);
 $("btnForgot").onclick = () => gradeCurrent(false);
 
+// Repeat buttons
 if ($("btnRepeatAll")) $("btnRepeatAll").onclick = () => repeatAllSession();
 if ($("btnRepeatUnknown")) $("btnRepeatUnknown").onclick = () => repeatUnknownSession();
 
+// Export/Share buttons
 if ($("btnExportUnknownSession")) $("btnExportUnknownSession").onclick = () => exportUnknownSessionTxt();
 if ($("btnExportUnknownAll")) $("btnExportUnknownAll").onclick = () => exportUnknownAllTxt();
 if ($("btnShareUnknownAll")) $("btnShareUnknownAll").onclick = () => shareUnknownAll();
 if ($("btnClearUnknownAll")) $("btnClearUnknownAll").onclick = () => clearUnknownAll();
 
+// ===== Service Worker (offline cache) =====
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});
 }
@@ -417,4 +406,3 @@ if ("serviceWorker" in navigator) {
 // ===== Init =====
 updateUI();
 loadDefaultTxtIfEmpty();
-

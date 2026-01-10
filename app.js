@@ -1,11 +1,11 @@
 /*
   Word Memo
-  Version: 1.06
-  Base: 1.05 (stable baseline)
+  Version: 1.07
+  Base: 1.06
   Changelog:
-  - Feature: Reverse mode (meaning → word)
-  - Feature: Stats panel (Today: Seen/Forgot/Knew) + Stats button
-  - UI: control grouping supported (no CSS dependency)
+  - Fix: When "Repeat unknown (session)" is clicked, Due now becomes the unknown-only count
+  - Add: Repeat-Unknown Mode (temporary queue filter using a snapshot of current sessionUnknownSet)
+  - Behavior: Due decreases on every next card within unknown-only mode, then auto-exits back to normal
 */
 
 const DEFAULT_TXT = "words.txt";
@@ -24,6 +24,10 @@ let showing = false;
 // Top10 mode
 let top10ModeOn = false;
 let top10Set = new Set();
+
+// ✅ Repeat-Unknown mode (NEW)
+let repeatUnknownModeOn = false;
+let repeatUnknownSet = new Set(); // snapshot at click time
 
 // Reverse mode
 let reverseMode = false;
@@ -123,16 +127,25 @@ function parseText(text) {
 
 // ---------- SRS ----------
 function nextDue(l){ return l===0?Date.now()+600000:Date.now()+[1,3,7,14,30][l-1]*86400000; }
+
+// ✅ Queue priority: RepeatUnknownMode > Top10Mode > Normal
 function getQueue(){
   const n=Date.now();
-  return top10ModeOn
-    ? cards.filter(c=>top10Set.has(c.id)&&c.due<=n)
-    : cards.filter(c=>c.due<=n);
+
+  if (repeatUnknownModeOn) {
+    // only repeatUnknownSet cards
+    return cards.filter(c => repeatUnknownSet.has(c.id) && c.due <= n);
+  }
+
+  if (top10ModeOn) {
+    return cards.filter(c => top10Set.has(c.id) && c.due <= n);
+  }
+
+  return cards.filter(c => c.due <= n);
 }
 
 // ---------- Helpers ----------
 function ensureSeenCountedOncePerCard(cardId) {
-  // Count "seen" once per card per session display (very simple: mark on card object)
   const c = cards.find(x => x.id === cardId);
   if (!c) return;
   if (c.__seenTodayKey !== todayKey()) {
@@ -141,8 +154,21 @@ function ensureSeenCountedOncePerCard(cardId) {
   }
 }
 
+// ✅ Exit helper for repeat-unknown mode when finished
+function autoExitRepeatUnknownIfFinished() {
+  if (!repeatUnknownModeOn) return;
+  if (getQueue().length === 0) {
+    repeatUnknownModeOn = false;
+    repeatUnknownSet = new Set();
+    showing = false;
+  }
+}
+
 // ---------- UI ----------
 function updateUI(){
+  // if repeat-unknown mode ended, auto-exit before painting
+  autoExitRepeatUnknownIfFinished();
+
   $("stat").textContent=`Cards: ${cards.length}`;
   $("due").textContent=`Due: ${getQueue().length}`;
   $("unknownCount").textContent=`Unknown: ${sessionUnknownSet.size}`;
@@ -160,18 +186,12 @@ function updateUI(){
 
   const c=q[0];
 
-  // seen counter (once per card per day)
   ensureSeenCountedOncePerCard(c.id);
 
-  // Reverse mode affects what is shown as "prompt" and "answer"
-  if (!reverseMode) {
-    $("prompt").textContent = c.term;
-  } else {
-    $("prompt").textContent = c.meaning;
-  }
+  // Reverse mode affects prompt/answer sides
+  $("prompt").textContent = reverseMode ? c.meaning : c.term;
 
   if(showing){
-    // show the other side
     $("answer").textContent = reverseMode ? c.term : c.meaning;
     $("answer").style.display="block";
     $("gradeRow").style.display="block";
@@ -197,6 +217,8 @@ $("btnForgot").onclick=()=>{
 
   c.level=0; c.due=nextDue(0);
 
+  // In repeat-unknown mode, we still keep the card in the set and it will reappear based on due.
+  // Due counter should decrease because this card is no longer due now.
   showing=false; updateUI();
 };
 
@@ -211,6 +233,7 @@ $("btnKnew").onclick=()=>{
   c.level=Math.min(c.level+1,5);
   c.due=nextDue(c.level);
 
+  // In repeat-unknown mode, even if it’s "knew", it drops out of due now and counter decreases.
   showing=false; updateUI();
 };
 
@@ -221,17 +244,30 @@ $("btnRepeatAll").onclick=()=>{
   const n=Date.now();
   sessionAllIds.forEach(id=>{ const c=cards.find(x=>x.id===id); if(c)c.due=n; });
 
+  // Leaving other modes for safety
   top10ModeOn=false; top10Set.clear();
+  repeatUnknownModeOn=false; repeatUnknownSet.clear();
+
   showing=false; updateUI();
 };
 
 $("btnRepeatUnknown").onclick=()=>{
   if(!sessionUnknownSet.size) return;
 
-  const n=Date.now();
-  sessionUnknownSet.forEach(id=>{ const c=cards.find(x=>x.id===id); if(c)c.due=n; });
+  // ✅ Enter repeat-unknown mode using a snapshot of CURRENT unknown ids
+  repeatUnknownModeOn = true;
+  repeatUnknownSet = new Set(Array.from(sessionUnknownSet));
 
+  // Ensure those unknown cards become due now (only within that set)
+  const n=Date.now();
+  repeatUnknownSet.forEach(id=>{
+    const c = cards.find(x=>x.id===id);
+    if (c) c.due = n;
+  });
+
+  // Exit other mode if needed
   top10ModeOn=false; top10Set.clear();
+
   showing=false; updateUI();
 };
 
@@ -243,6 +279,9 @@ $("btnTop10Forgot").onclick=()=>{
 
   const n=Date.now();
   ids.forEach(id=>{ const c=cards.find(x=>x.id===id); if(c)c.due=n; });
+
+  // Exit repeat-unknown mode if entering top10
+  repeatUnknownModeOn=false; repeatUnknownSet.clear();
 
   showing=false; updateUI();
 };
@@ -259,7 +298,7 @@ $("btnStats").onclick = () => {
 $("toggleReverse").onchange = (e) => {
   reverseMode = !!e.target.checked;
   saveReverse(reverseMode);
-  showing = false; // reset reveal state
+  showing = false;
   updateUI();
 };
 
@@ -269,13 +308,19 @@ $("btnImport").onclick=async()=>{
   cards=cards.concat(parseText(await f.text()));
   $("currentFile").textContent=f.name;
 
+  // Exit modes on import
   top10ModeOn=false; top10Set.clear();
+  repeatUnknownModeOn=false; repeatUnknownSet.clear();
+
   showing=false; updateUI();
 };
 
 $("btnClear").onclick=async()=>{
   cards=[]; sessionAllIds=[]; sessionUnknownSet.clear();
+
   top10ModeOn=false; top10Set.clear();
+  repeatUnknownModeOn=false; repeatUnknownSet.clear();
+
   showing=false;
 
   updateUI();

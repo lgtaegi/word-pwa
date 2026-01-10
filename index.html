@@ -1,9 +1,9 @@
 <!--
   Word Memo
-  Version: 1.03
+  Version: 1.04
   Changes:
-  - Move "Show meaning" together with "I forgot / I knew"
-  - Action buttons are now grouped between Study header and the word
+  - Revert to v1.02 layout for "Show meaning" + "I forgot / I knew"
+  - Right-align the lower control buttons (Repeat / Top10) to visually separate sections
 -->
 
 <!doctype html>
@@ -51,14 +51,10 @@
         </div>
       </div>
 
-      <!-- ✅ ACTION BUTTON GROUP -->
-      <div class="row" style="margin:8px 0 12px 0; gap:10px;">
-        <button id="btnShow">Show meaning</button>
-
-        <div id="gradeRow" class="row" style="display:none; gap:10px;">
-          <button id="btnForgot">I forgot</button>
-          <button id="btnKnew">I knew</button>
-        </div>
+      <!-- ✅ v1.02 style: grade buttons are between header and prompt (hidden until meaning shown) -->
+      <div id="gradeRow" class="row" style="display:none; margin:8px 0 10px 0;">
+        <button id="btnForgot">I forgot</button>
+        <button id="btnKnew">I knew</button>
       </div>
 
       <!-- Word -->
@@ -67,13 +63,16 @@
       <!-- Meaning -->
       <div id="answer" class="answer" style="display:none;"></div>
 
-      <!-- Other controls -->
-      <div class="row">
+      <!-- ✅ Show meaning stays in its original position (below word/meaning) -->
+      <button id="btnShow">Show meaning</button>
+
+      <!-- ✅ Lower buttons: right-aligned for separation -->
+      <div class="row" style="justify-content:flex-end; margin-top:12px;">
         <button id="btnRepeatAll">Repeat all (session)</button>
         <button id="btnRepeatUnknown">Repeat unknown (session)</button>
       </div>
 
-      <div class="row">
+      <div class="row" style="justify-content:flex-end;">
         <button id="btnTop10Forgot">Top 10 forgot (today)</button>
       </div>
     </section>

@@ -1,8 +1,8 @@
 /*
   Word Memo
-  Version: 1.03
+  Version: 1.04
   Changes:
-  - UI layout only: Show meaning moved into action button group
+  - UI layout change in HTML only (buttons right-aligned). JS logic unchanged.
 */
 
 const DEFAULT_TXT = "words.txt";
@@ -104,12 +104,12 @@ function updateUI(){
   if(showing){
     $("answer").textContent=c.meaning;
     $("answer").style.display="block";
+    $("gradeRow").style.display="block";
     $("btnShow").style.display="none";
-    $("gradeRow").style.display="flex";
   }else{
     $("answer").style.display="none";
-    $("btnShow").style.display="inline-block";
     $("gradeRow").style.display="none";
+    $("btnShow").style.display="inline-block";
   }
 }
 

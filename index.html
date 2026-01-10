@@ -1,9 +1,9 @@
 <!--
   Word Memo
-  Version: 1.01
+  Version: 1.03
   Changes:
-  - Confirm dialog for "Repeat all (session)"
-  - Added "Top 10 forgot (today)" study button
+  - Move "Show meaning" together with "I forgot / I knew"
+  - Action buttons are now grouped between Study header and the word
 -->
 
 <!doctype html>
@@ -51,22 +51,28 @@
         </div>
       </div>
 
-      <div id="prompt" class="prompt">Import a txt file to start.</div>
-      <div id="answer" class="answer" style="display:none;"></div>
+      <!-- ✅ ACTION BUTTON GROUP -->
+      <div class="row" style="margin:8px 0 12px 0; gap:10px;">
+        <button id="btnShow">Show meaning</button>
 
-      <button id="btnShow">Show meaning</button>
-
-      <div id="gradeRow" style="display:none;">
-        <button id="btnForgot">I forgot</button>
-        <button id="btnKnew">I knew</button>
+        <div id="gradeRow" class="row" style="display:none; gap:10px;">
+          <button id="btnForgot">I forgot</button>
+          <button id="btnKnew">I knew</button>
+        </div>
       </div>
 
+      <!-- Word -->
+      <div id="prompt" class="prompt">Import a txt file to start.</div>
+
+      <!-- Meaning -->
+      <div id="answer" class="answer" style="display:none;"></div>
+
+      <!-- Other controls -->
       <div class="row">
         <button id="btnRepeatAll">Repeat all (session)</button>
         <button id="btnRepeatUnknown">Repeat unknown (session)</button>
       </div>
 
-      <!-- ✅ NEW: Top 10 forgot today -->
       <div class="row">
         <button id="btnTop10Forgot">Top 10 forgot (today)</button>
       </div>

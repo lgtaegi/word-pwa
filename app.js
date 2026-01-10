@@ -1,15 +1,11 @@
 /*
   Word Memo
-  Version: 1.01
+  Version: 1.03
   Changes:
-  - Confirm dialog for "Repeat all (session)"
-  - Track today's "I forgot" counts and provide "Top 10 forgot (today)" study mode
-  - When Top10 mode finishes, it auto-closes (no Done popup)
+  - UI layout only: Show meaning moved into action button group
 */
 
 const DEFAULT_TXT = "words.txt";
-
-// 저장 (기존 v1.0은 메모리-only였지만, Top10 카운트는 저장해야 해서 추가)
 const LS_FORGOT_STATS = "wordmemo_forgot_stats_v1";
 
 let cards = [];
@@ -18,334 +14,166 @@ let sessionUnknownSet = new Set();
 
 let showing = false;
 
-// ===== Top10 mode =====
+// Top10 mode
 let top10ModeOn = false;
 let top10Set = new Set();
 
 const $ = (id) => document.getElementById(id);
 
-// =========================
-// Date key (local date)
-// =========================
+// ---------- Date ----------
 function todayKey() {
   const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
-// =========================
-// Forgot stats store
-// stats = { "YYYY-MM-DD": { [cardId]: count, ... }, ... }
-// =========================
+// ---------- Forgot stats ----------
 function loadForgotStats() {
-  try {
-    return JSON.parse(localStorage.getItem(LS_FORGOT_STATS) || "{}");
-  } catch {
-    return {};
-  }
+  try { return JSON.parse(localStorage.getItem(LS_FORGOT_STATS) || "{}"); }
+  catch { return {}; }
 }
-function saveForgotStats(stats) {
-  localStorage.setItem(LS_FORGOT_STATS, JSON.stringify(stats));
+function saveForgotStats(s) {
+  localStorage.setItem(LS_FORGOT_STATS, JSON.stringify(s));
 }
-
-function bumpForgotCount(cardId) {
-  const key = todayKey();
-  const stats = loadForgotStats();
-  if (!stats[key]) stats[key] = {};
-  stats[key][cardId] = (stats[key][cardId] || 0) + 1;
-  saveForgotStats(stats);
+function bumpForgotCount(id) {
+  const k = todayKey();
+  const s = loadForgotStats();
+  if (!s[k]) s[k] = {};
+  s[k][id] = (s[k][id] || 0) + 1;
+  saveForgotStats(s);
 }
-
 function getTop10ForgotIdsToday() {
-  const key = todayKey();
-  const stats = loadForgotStats();
-  const day = stats[key] || {};
-  const entries = Object.entries(day); // [id, count]
-
-  // count desc
-  entries.sort((a, b) => (b[1] || 0) - (a[1] || 0));
-
-  // top 10 ids that still exist in cards
-  const existing = new Set(cards.map(c => c.id));
-  const ids = [];
-  for (const [id] of entries) {
-    if (existing.has(id)) ids.push(id);
-    if (ids.length >= 10) break;
-  }
-  return ids;
+  const day = loadForgotStats()[todayKey()] || {};
+  return Object.entries(day)
+    .sort((a,b)=>b[1]-a[1])
+    .map(e=>e[0])
+    .filter(id=>cards.some(c=>c.id===id))
+    .slice(0,10);
 }
 
-// =========================
-// Load default words.txt
-// =========================
+// ---------- Load default ----------
 async function loadDefault() {
-  if (cards.length > 0) return;
-
+  if (cards.length) return;
   try {
-    const res = await fetch(DEFAULT_TXT);
-    if (!res.ok) throw new Error("fetch failed");
-
-    const text = await res.text();
-    cards = parseText(text);
-
+    const r = await fetch(DEFAULT_TXT);
+    if (!r.ok) throw 0;
+    cards = parseText(await r.text());
     $("currentFile").textContent = DEFAULT_TXT;
     updateUI();
-  } catch (e) {
+  } catch {
     $("prompt").textContent = "Failed to load words.txt";
   }
 }
 
-// =========================
-// Parse text
-// =========================
+// ---------- Parse ----------
 function parseText(text) {
-  return text
-    .split(/\r?\n/)
-    .map(l => l.trim())
-    .filter(Boolean)
-    .map(line => {
-      let term = "", meaning = "";
-
-      if (line.includes("\t")) {
-        [term, meaning] = line.split("\t");
-      } else if (line.includes(" - ")) {
-        [term, meaning] = line.split(" - ");
-      } else {
-        return null;
-      }
-
-      return {
-        id: Math.random().toString(36).slice(2),
-        term: term.trim(),
-        meaning: meaning.trim(),
-        level: 0,
-        due: Date.now()
-      };
-    })
-    .filter(Boolean);
+  return text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean).map(line=>{
+    let t="",m="";
+    if (line.includes("\t")) [t,m]=line.split("\t");
+    else if (line.includes(" - ")) [t,m]=line.split(" - ");
+    else return null;
+    return { id:Math.random().toString(36).slice(2), term:t.trim(), meaning:m.trim(), level:0, due:Date.now() };
+  }).filter(Boolean);
 }
 
-// =========================
-// SRS
-// =========================
-function nextDue(level) {
-  if (level === 0) return Date.now() + 10 * 60 * 1000;
-  const days = [1, 3, 7, 14, 30];
-  return Date.now() + days[level - 1] * 86400000;
+// ---------- SRS ----------
+function nextDue(l){ return l===0?Date.now()+600000:Date.now()+[1,3,7,14,30][l-1]*86400000; }
+function getQueue(){
+  const n=Date.now();
+  return top10ModeOn
+    ? cards.filter(c=>top10Set.has(c.id)&&c.due<=n)
+    : cards.filter(c=>c.due<=n);
 }
 
-// ✅ 큐: Top10 모드면 Top10만
-function getQueue() {
-  const now = Date.now();
-  if (top10ModeOn) {
-    return cards.filter(c => top10Set.has(c.id) && c.due <= now);
-  }
-  return cards.filter(c => c.due <= now);
-}
+// ---------- UI ----------
+function updateUI(){
+  $("stat").textContent=`Cards: ${cards.length}`;
+  $("due").textContent=`Due: ${getQueue().length}`;
+  $("unknownCount").textContent=`Unknown: ${sessionUnknownSet.size}`;
 
-// Top10 mode가 끝나면(큐 0) 자동으로 그냥 종료
-function autoCloseTop10IfFinished() {
-  if (!top10ModeOn) return;
-  const q = getQueue();
-  if (q.length === 0) {
-    top10ModeOn = false;
-    top10Set = new Set();
-    showing = false;
-  }
-}
-
-// =========================
-// UI
-// =========================
-function updateUI() {
-  $("stat").textContent = `Cards: ${cards.length}`;
-
-  // Due: Top10 모드에서는 "Top10 남은 개수"가 due처럼 보이게
-  $("due").textContent = `Due: ${getQueue().length}`;
-
-  // Unknown: v1.0처럼 세션 unknown 유지
-  $("unknownCount").textContent = `Unknown: ${sessionUnknownSet.size}`;
-
-  const queue = getQueue();
-
-  if (!queue.length) {
-    // Top10 모드였고 다 끝났으면, 팝업 없이 자동 종료 후 다시 UI 갱신
-    if (top10ModeOn) {
-      autoCloseTop10IfFinished();
-      // 종료되었으니 일반 큐 기준으로 다시 그리기
-      $("due").textContent = `Due: ${getQueue().length}`;
-    }
-
-    const q2 = getQueue();
-    if (!q2.length) {
-      $("prompt").textContent = "No cards due 🎉";
-      $("answer").style.display = "none";
-      $("btnShow").style.display = "none";
-      $("gradeRow").style.display = "none";
-      return;
-    }
-  }
-
-  const card = getQueue()[0];
-  if (!card) {
-    $("prompt").textContent = "No cards due 🎉";
-    $("answer").style.display = "none";
-    $("btnShow").style.display = "none";
-    $("gradeRow").style.display = "none";
+  const q=getQueue();
+  if(!q.length){
+    $("prompt").textContent="No cards due 🎉";
+    $("answer").style.display="none";
+    $("btnShow").style.display="none";
+    $("gradeRow").style.display="none";
     return;
   }
+  const c=q[0];
+  $("prompt").textContent=c.term;
 
-  $("prompt").textContent = card.term;
-
-  if (showing) {
-    $("answer").textContent = card.meaning;
-    $("answer").style.display = "block";
-    $("gradeRow").style.display = "block";
-    $("btnShow").style.display = "none";
-  } else {
-    $("answer").style.display = "none";
-    $("gradeRow").style.display = "none";
-    $("btnShow").style.display = "inline-block";
+  if(showing){
+    $("answer").textContent=c.meaning;
+    $("answer").style.display="block";
+    $("btnShow").style.display="none";
+    $("gradeRow").style.display="flex";
+  }else{
+    $("answer").style.display="none";
+    $("btnShow").style.display="inline-block";
+    $("gradeRow").style.display="none";
   }
 }
 
-// =========================
-// Actions
-// =========================
-$("btnShow").onclick = () => {
-  showing = true;
-  updateUI();
+// ---------- Actions ----------
+$("btnShow").onclick=()=>{ showing=true; updateUI(); };
+
+$("btnForgot").onclick=()=>{
+  const c=getQueue()[0]; if(!c)return;
+  bumpForgotCount(c.id);
+  sessionAllIds.push(c.id);
+  sessionUnknownSet.add(c.id);
+  c.level=0; c.due=nextDue(0);
+  showing=false; updateUI();
 };
 
-$("btnForgot").onclick = () => {
-  const card = getQueue()[0];
-  if (!card) return;
-
-  // ✅ 오늘 forgot 카운트 +1
-  bumpForgotCount(card.id);
-
-  sessionAllIds.push(card.id);
-  sessionUnknownSet.add(card.id);
-
-  card.level = 0;
-  card.due = nextDue(0);
-
-  showing = false;
-  updateUI();
+$("btnKnew").onclick=()=>{
+  const c=getQueue()[0]; if(!c)return;
+  sessionAllIds.push(c.id);
+  sessionUnknownSet.delete(c.id);
+  c.level=Math.min(c.level+1,5);
+  c.due=nextDue(c.level);
+  showing=false; updateUI();
 };
 
-$("btnKnew").onclick = () => {
-  const card = getQueue()[0];
-  if (!card) return;
-
-  sessionAllIds.push(card.id);
-  sessionUnknownSet.delete(card.id);
-
-  card.level = Math.min(card.level + 1, 5);
-  card.due = nextDue(card.level);
-
-  showing = false;
-  updateUI();
+$("btnRepeatAll").onclick=()=>{
+  if(!sessionAllIds.length) return;
+  if(!confirm("Repeat all (session)?")) return;
+  const n=Date.now();
+  sessionAllIds.forEach(id=>{ const c=cards.find(x=>x.id===id); if(c)c.due=n; });
+  top10ModeOn=false; top10Set.clear();
+  showing=false; updateUI();
 };
 
-// ✅ Repeat all: 실수 방지 확인창
-$("btnRepeatAll").onclick = () => {
-  if (sessionAllIds.length === 0) return;
-
-  const ok = confirm("Repeat all (session)?");
-  if (!ok) return;
-
-  const now = Date.now();
-  sessionAllIds.forEach(id => {
-    const c = cards.find(x => x.id === id);
-    if (c) c.due = now;
-  });
-
-  // repeat all을 누르면 Top10 모드는 끄는 게 안전(실수 방지)
-  top10ModeOn = false;
-  top10Set = new Set();
-
-  showing = false;
-  updateUI();
+$("btnRepeatUnknown").onclick=()=>{
+  if(!sessionUnknownSet.size) return;
+  const n=Date.now();
+  sessionUnknownSet.forEach(id=>{ const c=cards.find(x=>x.id===id); if(c)c.due=n; });
+  top10ModeOn=false; top10Set.clear();
+  showing=false; updateUI();
 };
 
-$("btnRepeatUnknown").onclick = () => {
-  if (sessionUnknownSet.size === 0) return;
-
-  const now = Date.now();
-  sessionUnknownSet.forEach(id => {
-    const c = cards.find(x => x.id === id);
-    if (c) c.due = now;
-  });
-
-  // repeat unknown도 Top10 모드는 끔
-  top10ModeOn = false;
-  top10Set = new Set();
-
-  showing = false;
-  updateUI();
+$("btnTop10Forgot").onclick=()=>{
+  const ids=getTop10ForgotIdsToday();
+  if(!ids.length) return alert("No 'I forgot' records for today yet.");
+  top10ModeOn=true; top10Set=new Set(ids);
+  const n=Date.now();
+  ids.forEach(id=>{ const c=cards.find(x=>x.id===id); if(c)c.due=n; });
+  showing=false; updateUI();
 };
 
-// ✅ NEW: Top 10 forgot (today)
-$("btnTop10Forgot").onclick = () => {
-  const ids = getTop10ForgotIdsToday();
-  if (ids.length === 0) {
-    alert("No 'I forgot' records for today yet.");
-    return;
-  }
-
-  // Top10 모드 ON
-  top10ModeOn = true;
-  top10Set = new Set(ids);
-
-  // Top10만 지금 바로 복습되게 due를 now로 당김
-  const now = Date.now();
-  ids.forEach(id => {
-    const c = cards.find(x => x.id === id);
-    if (c) c.due = now;
-  });
-
-  showing = false;
-  updateUI();
+// ---------- Import ----------
+$("btnImport").onclick=async()=>{
+  const f=$("file").files[0]; if(!f)return;
+  cards=cards.concat(parseText(await f.text()));
+  $("currentFile").textContent=f.name;
+  top10ModeOn=false; top10Set.clear();
+  showing=false; updateUI();
 };
 
-// =========================
-// Import
-// =========================
-$("btnImport").onclick = async () => {
-  const file = $("file").files[0];
-  if (!file) return;
-
-  const text = await file.text();
-  const parsed = parseText(text);
-
-  cards = cards.concat(parsed);
-  $("currentFile").textContent = file.name;
-
-  // 새 단어 임포트하면 모드들 정리
-  top10ModeOn = false;
-  top10Set = new Set();
-
-  showing = false;
-  updateUI();
+$("btnClear").onclick=async()=>{
+  cards=[]; sessionAllIds=[]; sessionUnknownSet.clear();
+  top10ModeOn=false; top10Set.clear();
+  updateUI(); await loadDefault();
 };
 
-$("btnClear").onclick = async () => {
-  cards = [];
-  sessionAllIds = [];
-  sessionUnknownSet.clear();
-
-  // 모드 정리
-  top10ModeOn = false;
-  top10Set = new Set();
-
-  updateUI();
-  await loadDefault();
-};
-
-// =========================
-// Init
-// =========================
+// ---------- Init ----------
 loadDefault();

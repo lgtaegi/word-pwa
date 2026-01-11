@@ -1,9 +1,11 @@
 <!--
   Word Memo
-  Version: 1.11
-  Base: 1.10
+  Version: 1.12
+  Base: 1.11
   Changelog:
-  - Swapped the positions of "I forgot" and "I knew" buttons.
+  - Added colors to grade buttons:
+    - I knew  => green
+    - I forgot => red
 -->
 
 <!doctype html>
@@ -16,15 +18,33 @@
   <link rel="stylesheet" href="style.css" />
 
   <style>
-    /* v1.10 number style */
+    /* number style */
     .word-num {
       font-size: 0.5em;
-      color: #9aa0a6; /* light gray */
+      color: #9aa0a6;
       margin-right: 6px;
       vertical-align: top;
     }
+
+    /* v1.12 grade button colors */
+    .btn-knew {
+      background-color: #4CAF50; /* green */
+      color: white;
+    }
+    .btn-knew:hover {
+      background-color: #46a04a;
+    }
+
+    .btn-forgot {
+      background-color: #e74c3c; /* red */
+      color: white;
+    }
+    .btn-forgot:hover {
+      background-color: #cf3f30;
+    }
   </style>
 </head>
+
 <body>
   <header class="top">
     <h1>Word Memo</h1>
@@ -32,6 +52,7 @@
   </header>
 
   <main class="wrap">
+
     <!-- IMPORT -->
     <section class="card">
       <h2>Import words (.txt)</h2>
@@ -51,6 +72,7 @@
       </p>
     </section>
 
+
     <!-- STUDY -->
     <section class="card">
       <div class="row space">
@@ -61,18 +83,15 @@
         </div>
       </div>
 
-      <!-- Prompt -->
       <div id="prompt" class="prompt">Import a txt file to start.</div>
-
-      <!-- Answer -->
       <div id="answer" class="answer" style="display:none;"></div>
 
       <button id="btnShow">Show meaning</button>
 
-      <!-- grade buttons (SWAPPED v1.11) -->
+      <!-- v1.12 grade buttons with color -->
       <div id="gradeRow" class="row" style="display:none;">
-        <button id="btnKnew">I knew</button>
-        <button id="btnForgot">I forgot</button>
+        <button id="btnKnew" class="btn-knew">I knew</button>
+        <button id="btnForgot" class="btn-forgot">I forgot</button>
       </div>
 
       <hr style="border:0;border-top:1px solid rgba(0,0,0,.12); margin:14px 0 12px 0;" />
@@ -106,6 +125,7 @@
         <button id="btnShareUnknownSession">Share / Save unknown (session)</button>
         <button id="btnClearUnknownSession">Clear unknown list (session)</button>
       </div>
+
     </section>
   </main>
 

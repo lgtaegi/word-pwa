@@ -1,11 +1,9 @@
 <!--
   Word Memo
-  Version: 1.10
-  Base: 1.09
+  Version: 1.11
+  Base: 1.10
   Changelog:
-  - Word number display updated:
-    - Always show "." after number (e.g. 123.)
-    - Smaller size (50%) and lighter gray color
+  - Swapped the positions of "I forgot" and "I knew" buttons.
 -->
 
 <!doctype html>
@@ -71,9 +69,10 @@
 
       <button id="btnShow">Show meaning</button>
 
+      <!-- grade buttons (SWAPPED v1.11) -->
       <div id="gradeRow" class="row" style="display:none;">
-        <button id="btnForgot">I forgot</button>
         <button id="btnKnew">I knew</button>
+        <button id="btnForgot">I forgot</button>
       </div>
 
       <hr style="border:0;border-top:1px solid rgba(0,0,0,.12); margin:14px 0 12px 0;" />

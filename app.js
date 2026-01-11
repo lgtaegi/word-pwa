@@ -1,20 +1,12 @@
 /*
   Word Memo
-  Version: 1.08
-  Base: 1.07
+  Version: 1.09
+  Base: 1.08
   Changelog:
-  - Reverse mode changed: Reverse = reverse ORDER only (bottom -> top), not meaning-first
-  - Meaning mode added: prompt shows meaning(KR), answer reveals term(EN)
-  - Number parsing added:
-    - If a line starts with a number, store it in card.num and keep term clean
-    - If no number exists, card.num = null (safe; no errors)
-    - Number is always displayed (if present), even in Meaning mode
-  - Unknown buttons restored:
-    1) Download unknown (session)
-    2) Download unknown (ALL)
-    3) Share / Save unknown (session)
-    4) Clear unknown list (session)
-  - Keeps 1.07 repeat-unknown behavior (Due becomes unknown-based in that mode)
+  - UX: When Meaning mode is ON, the main reveal button text changes:
+      Meaning OFF -> "Show meaning"
+      Meaning ON  -> "Show word"
+    (Layout unchanged; text only.)
 */
 
 const DEFAULT_TXT = "words.txt";
@@ -160,6 +152,13 @@ function saveBool(key, on) {
   localStorage.setItem(key, on ? "1" : "0");
 }
 
+// ✅ v1.09: Show button label based on Meaning mode
+function updateShowButtonLabel() {
+  const btn = $("btnShow");
+  if (!btn) return;
+  btn.textContent = meaningMode ? "Show word" : "Show meaning";
+}
+
 // ---------- Load default ----------
 async function loadDefault() {
   if (cards.length) return;
@@ -232,21 +231,18 @@ function autoExitRepeatUnknownIfFinished() {
 // ---------- Prompt/Answer builders ----------
 function buildPrompt(card) {
   const prefix = numPrefix(card.num);
-
-  // Meaning mode: show Korean first
-  if (meaningMode) return prefix + card.meaning;
-
-  // Normal: show English term
-  return prefix + card.term;
+  return meaningMode ? (prefix + card.meaning) : (prefix + card.term);
 }
 function buildAnswer(card) {
-  // show the other side
   return meaningMode ? card.term : card.meaning;
 }
 
 // ---------- UI ----------
 function updateUI(){
   autoExitRepeatUnknownIfFinished();
+
+  // v1.09 label update (safe to call every render)
+  updateShowButtonLabel();
 
   $("stat").textContent = `Cards: ${cards.length}`;
   $("due").textContent  = `Due: ${getQueue().length}`;
@@ -386,6 +382,10 @@ $("btnStats").onclick = () => {
 $("toggleMeaning").onchange = (e) => {
   meaningMode = !!e.target.checked;
   saveBool(LS_MEANING, meaningMode);
+
+  // v1.09: immediately update label
+  updateShowButtonLabel();
+
   showing = false;
   updateUI();
 };
@@ -397,7 +397,7 @@ $("toggleReverse").onchange = (e) => {
   updateUI();
 };
 
-// ---------- Unknown buttons (restored) ----------
+// ---------- Unknown buttons ----------
 function makeUnknownSessionText() {
   const lines = [];
   sessionUnknownSet.forEach(id => {
@@ -450,8 +450,6 @@ $("btnShareUnknownSession").onclick = async () => {
       }
     } catch {}
   }
-
-  // fallback: download
   downloadText(filename, txt);
 };
 
@@ -499,6 +497,9 @@ $("btnClear").onclick = async () => {
 
   if ($("toggleMeaning")) $("toggleMeaning").checked = meaningMode;
   if ($("toggleReverse")) $("toggleReverse").checked = reverseMode;
+
+  // v1.09 label update on startup
+  updateShowButtonLabel();
 
   updateStatsUI();
   loadDefault();

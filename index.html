@@ -1,11 +1,9 @@
 <!--
   Word Memo
-  Version: 1.12
-  Base: 1.11
-  Changelog:
-  - Added colors to grade buttons:
-    - I knew  => green
-    - I forgot => red
+  Version: 1.13
+  Base: 1.12
+  Update Notes (lgtaegi):
+  - UI label: "Due" -> "Remaining" (layout unchanged)
 -->
 
 <!doctype html>
@@ -78,7 +76,7 @@
       <div class="row space">
         <h2>Study</h2>
         <div>
-          <span id="due">Due: 0</span><br />
+          <span id="due">Remaining: 0</span><br />
           <span id="unknownCount">Unknown: 0</span>
         </div>
       </div>
@@ -88,7 +86,7 @@
 
       <button id="btnShow">Show meaning</button>
 
-      <!-- v1.12 grade buttons with color -->
+      <!-- grade buttons with color -->
       <div id="gradeRow" class="row" style="display:none;">
         <button id="btnKnew" class="btn-knew">I knew</button>
         <button id="btnForgot" class="btn-forgot">I forgot</button>
